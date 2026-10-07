@@ -28,19 +28,29 @@
         nativeBuildInputs ? [],
         ...
       } @ args:
-        stdenv.mkDerivation (final:
-          {
-            inherit src;
-            zigDeps = args.zigDeps or finalAttrs.passthru.fetchDeps {
-              inherit (final) src;
-              name = final.name or null;
-              pname = final.pname or null;
-              version = final.version or null;
-              hash = depsHash;
-            };
-            nativeBuildInputs = nativeBuildInputs ++ [zig];
-          }
-          // lib.removeAttrs args ["stdenv" "nativeBuildInputs" "depsHash"]);
+        stdenv.mkDerivation (
+          final:
+            {
+              inherit src;
+              zigDeps = args.zigDeps or finalAttrs.passthru.fetchDeps {
+                inherit (final) src;
+                name = final.name or null;
+                pname = final.pname or null;
+                version = final.version or null;
+                hash = depsHash;
+              };
+              postConfigure = ''
+                ln -s ${final.zigDeps} "$ZIG_GLOBAL_CACHE_DIR/p"
+              '';
+
+              nativeBuildInputs = nativeBuildInputs ++ [zig];
+            }
+            // lib.removeAttrs args [
+              "stdenv"
+              "nativeBuildInputs"
+              "depsHash"
+            ]
+        );
     };
 
     src = zigSource;
@@ -69,7 +79,8 @@
       # Note that while this fix is already merged upstream and will be included in 0.14+,
       # we can't fetchpatch the upstream commit as it won't cleanly apply on older versions,
       # so we substitute the paths instead.
-      + lib.optionalString (stdenvNoCC.hostPlatform.isDarwin && lib.versionOlder finalAttrs.version "0.14") ''
+      + lib.optionalString (stdenvNoCC.hostPlatform.isDarwin && lib.versionOlder finalAttrs.version "0.14")
+      ''
         substituteInPlace lib/std/zig/system/darwin.zig \
           --replace /usr/bin/xcrun xcrun \
           --replace /usr/bin/xcode-select xcode-select
