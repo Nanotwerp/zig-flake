@@ -1,66 +1,118 @@
 # shellcheck shell=bash
 
-zigAddDefaultFlags() {
-    local buildCores=1
+# shellcheck disable=SC2034
+readonly zigDefaultCpuFlag="-Dcpu=baseline"
+readonly zigDefaultOptimizeFlag="--release="${zigReleaseMode:-any}""
 
-    # Parallel building is enabled by default.
-    if [ "${enableParallelBuilding-1}" ]; then
-        buildCores="$NIX_BUILD_CORES"
-    fi
+function zigConfigurePhase {
+  runHook preConfigure
 
-    flagsArray+=(
-        ${zigDeps:+--system "$zigDeps"}
-        "-j$buildCores"
-        -Dcpu="${zigCpuTarget:-baseline}"
-    )
+  ZIG_GLOBAL_CACHE_DIR=$(mktemp -d)
+  export ZIG_GLOBAL_CACHE_DIR
+
+  runHook postConfigure
 }
 
-zigBuildPhase() {
-    runHook preBuild
+function zigBuildPhase {
+  runHook preBuild
 
-    local flagsArray=(
-        --release="${zigReleaseMode:-any}"
-    )
-    zigAddDefaultFlags
-    concatTo flagsArray zigFlags zigFlagsArray
+  local buildCores=1
 
-    echoCmd 'build flags' "${flagsArray[@]}"
-    ZIG_GLOBAL_CACHE_DIR=.zig-cache TERM=dumb zig build "${flagsArray[@]}"
+  # Parallel building is enabled by default.
+  if [ "${enableParallelBuilding-1}" ]; then
+    buildCores="$NIX_BUILD_CORES"
+  fi
 
-    runHook postBuild
+  local flagsArray=(
+    "-j$buildCores"
+  )
+  concatTo flagsArray \
+    zigBuildFlags zigBuildFlagsArray
+
+  if [ -z "${dontSetZigDefaultFlags:-}" ]; then
+    concatTo flagsArray \
+      zigDefaultCpuFlag zigDefaultOptimizeFlag
+  fi
+
+  echoCmd 'zig build flags' "${flagsArray[@]}"
+  TERM=dumb zig build "${flagsArray[@]}" --verbose
+
+  runHook postBuild
 }
 
-zigCheckPhase() {
-    runHook preCheck
+function zigCheckPhase {
+  runHook preCheck
 
-    local flagsArray=()
-    zigAddDefaultFlags
-    concatTo flagsArray zigFlags zigFlagsArray checkTarget=test
+  local buildCores=1
 
-    echoCmd 'check flags' "${flagsArray[@]}"
-    ZIG_GLOBAL_CACHE_DIR=.zig-cache TERM=dumb zig build "${flagsArray[@]}"
+  # Parallel building is enabled by default.
+  if [ "${enableParallelChecking-1}" ]; then
+    buildCores="$NIX_BUILD_CORES"
+  fi
 
-    runHook postCheck
+  local flagsArray=(
+    "-j$buildCores"
+  )
+  concatTo flagsArray \
+    zigCheckFlags zigCheckFlagsArray
+
+  if [ -z "${dontSetZigDefaultFlags:-}" ]; then
+    concatTo flagsArray \
+      zigDefaultCpuFlag zigDefaultOptimizeFlag
+  fi
+
+  echoCmd 'zig check flags' "${flagsArray[@]}"
+  TERM=dumb zig build test "${flagsArray[@]}" --verbose
+
+  runHook postCheck
 }
 
-zigInstallPhase() {
-    runHook preInstall
+function zigInstallPhase {
+  runHook preInstall
 
-    # shellcheck disable=SC2154
-    mkdir -p "$prefix"
-    mv -t "$prefix" zig-out/*
+  local buildCores=1
 
-    runHook postInstall
+  # Parallel building is enabled by default.
+  if [ "${enableParallelInstalling-1}" ]; then
+    buildCores="$NIX_BUILD_CORES"
+  fi
+
+  local flagsArray=(
+    "-j$buildCores"
+  )
+
+  concatTo flagsArray \
+    zigBuildFlags zigBuildFlagsArray \
+    zigInstallFlags zigInstallFlagsArray
+
+  if [ -z "${dontSetZigDefaultFlags:-}" ]; then
+    concatTo flagsArray \
+      zigDefaultCpuFlag zigDefaultOptimizeFlag
+  fi
+
+  if [ -z "${dontAddPrefix-}" ] && [ -n "$prefix" ]; then
+    # Zig does not recognize `--prefix=/dir/`, only `--prefix /dir/`
+    flagsArray+=("${prefixKey:---prefix}" "$prefix")
+  fi
+
+  echoCmd 'zig install flags' "${flagsArray[@]}"
+  TERM=dumb zig build install "${flagsArray[@]}" --verbose
+
+  runHook postInstall
 }
+
+if [ -z "${dontUseZigConfigure-}" ] && [ -z "${configurePhase-}" ]; then
+  configurePhase=zigConfigurePhase
+fi
 
 if [ -z "${dontUseZigBuild-}" ] && [ -z "${buildPhase-}" ]; then
-    buildPhase=zigBuildPhase
+  buildPhase=zigBuildPhase
 fi
 
 if [ -z "${dontUseZigCheck-}" ] && [ -z "${checkPhase-}" ]; then
-    checkPhase=zigCheckPhase
+  checkPhase=zigCheckPhase
 fi
 
 if [ -z "${dontUseZigInstall-}" ] && [ -z "${installPhase-}" ]; then
-    installPhase=zigInstallPhase
+  installPhase=zigInstallPhase
 fi
