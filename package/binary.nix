@@ -1,5 +1,6 @@
 # Extract and package a ZSF binary release
 {
+  pkgs,
   lib,
   stdenvNoCC,
   callPackage,
@@ -39,6 +40,10 @@
               hash = depsHash;
             };
             nativeBuildInputs = nativeBuildInputs ++ [zig];
+
+            postConfigure = ''
+              ln -s ${final.zigDeps} "$ZIG_GLOBAL_CACHE_DIR/p"
+            '';
           }
           // lib.removeAttrs args ["stdenv" "nativeBuildInputs" "depsHash"]);
     };
@@ -49,12 +54,7 @@
     buildInputs = lib.optional stdenvNoCC.hostPlatform.isDarwin xcbuild;
     propagatedBuildInputs = lib.optional stdenvNoCC.hostPlatform.isDarwin xcbuild;
 
-    # zig-flake's setup hook only supports Zig 0.12 or later due to using `--release`
-    # TODO: print an error in the setup hook, rather than silently disabling it
-    setupHook =
-      if (lib.versionAtLeast zig.version "0.12")
-      then ./setup-hook.sh
-      else null;
+    setupHook = pkgs.zig_0_17.setupHook;
 
     postPatch =
       # Zig's build looks at /usr/bin/env to find dynamic linking info. This doesn't
